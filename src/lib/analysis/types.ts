@@ -23,9 +23,18 @@ export interface AnalysisRequest {
   createdAt: string;
 }
 
+export interface DataProviderInfo {
+  used: string[];
+  warnings: string[];
+  noKeyMode: boolean;
+  exactStatsAvailable: boolean;
+  cookiesEnabled?: boolean;
+}
+
 export interface AnalysisResult {
   id: string;
   request: AnalysisRequest;
+  dataProvider: DataProviderInfo;
   source: {
     name: string;
     url?: string;

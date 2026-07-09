@@ -5,7 +5,8 @@ import {
   Youtube, Search, Link2, Hash, ArrowRight, Loader2,
   Sparkles, Globe, Zap, AlertCircle, Brain, Target,
   DollarSign, Heart, Lightbulb, Trophy, Pen, User,
-  Play, Eye, BarChart3, ExternalLink
+  Play, Eye, BarChart3, ExternalLink, Shield,
+  Key, Wifi, Cookie
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -13,6 +14,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { runLocalAnalysis } from '@/lib/analysis/runAnalysis';
 import { saveAnalysis } from '@/lib/storage/analysisStore';
+import { getLocalRuntimeConfig } from '@/lib/config/localRuntimeConfig';
 import type { AnalysisMode } from '@/lib/analysis/types';
 
 const modes = [
@@ -123,6 +125,15 @@ export function Workflow() {
     }
   };
 
+  // Runtime config for status badges
+  const runtimeConfig = (() => {
+    try {
+      return getLocalRuntimeConfig();
+    } catch {
+      return { noKeyMode: true, enableYtDlp: false, enableCookies: false, youtubeApiKeyAvailable: false };
+    }
+  })();
+
   const getPlaceholder = () => {
     switch (selectedMode) {
       case 'channel': return 'e.g., https://youtube.com/@channelname';
@@ -192,6 +203,48 @@ export function Workflow() {
             </Card>
           </motion.div>
         )}
+
+        {/* Runtime Status Badges */}
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.05 }}
+          className="flex flex-wrap gap-2 mb-6 justify-center"
+        >
+          {runtimeConfig.noKeyMode ? (
+            <Badge variant="outline" className="px-3 py-1 text-xs border-amber-500/30 text-amber-400 bg-amber-500/5">
+              <Key className="w-3 h-3 mr-1" />
+              No-Key Mode
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="px-3 py-1 text-xs border-green-500/30 text-green-400 bg-green-500/5">
+              <Shield className="w-3 h-3 mr-1" />
+              YouTube API Enabled
+            </Badge>
+          )}
+          {runtimeConfig.enableYtDlp ? (
+            <Badge variant="outline" className="px-3 py-1 text-xs border-cyan-500/30 text-cyan-400 bg-cyan-500/5">
+              <Wifi className="w-3 h-3 mr-1" />
+              yt-dlp Local Enabled
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="px-3 py-1 text-xs border-dark-600 text-muted-foreground bg-dark-800/30">
+              <Wifi className="w-3 h-3 mr-1" />
+              yt-dlp Disabled
+            </Badge>
+          )}
+          {runtimeConfig.enableCookies ? (
+            <Badge variant="outline" className="px-3 py-1 text-xs border-orange-500/30 text-orange-400 bg-orange-500/5">
+              <Cookie className="w-3 h-3 mr-1" />
+              Cookies Enabled (local-only)
+            </Badge>
+          ) : (
+            <Badge variant="outline" className="px-3 py-1 text-xs border-dark-600 text-muted-foreground bg-dark-800/30">
+              <Cookie className="w-3 h-3 mr-1" />
+              Cookies Disabled
+            </Badge>
+          )}
+        </motion.div>
 
         {/* Mode Selection */}
         <motion.div

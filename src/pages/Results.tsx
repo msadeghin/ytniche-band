@@ -6,7 +6,7 @@ import {
   Target, Shield, Brain, BarChart3, Lightbulb,
   ExternalLink, CheckCircle2, AlertTriangle, Clock,
   Zap, Mountain, Lock, Waves, Dna, Award, BookOpen,
-  DollarSign
+  DollarSign, Wifi, Key, Cookie
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -19,6 +19,7 @@ import { calculateWeightedOpportunityScore } from '../lib/analysis/opportunitySc
 import { extractScriptDNA } from '../lib/analysis/scriptDNA';
 import { getAnalysis } from '../lib/storage/analysisStore';
 import type { AnalysisResult } from '../lib/analysis/types';
+import type { DataProviderInfo } from '../lib/analysis/types';
 import type { PyramidResult } from '../lib/analysis/pyramid';
 import type { BarrierResult } from '../lib/analysis/barriers';
 import type { SaturationResult } from '../lib/analysis/saturation';
@@ -28,6 +29,13 @@ import type { ScriptDNAResult } from '../lib/analysis/scriptDNA';
 // ─── Demo Data ─────────────────────────────────────────────────
 const demoResults: AnalysisResult = {
   id: "demo",
+  dataProvider: {
+    used: ["manual"],
+    warnings: ["Demo data — not from a real analysis."],
+    noKeyMode: true,
+    exactStatsAvailable: false,
+    cookiesEnabled: false,
+  },
   request: {
     mode: "channel",
     input: "@visualmindai",
@@ -340,9 +348,61 @@ function OverviewTab({ result }: { result: AnalysisResult }) {
             </Card>
           );
         })}
-      </div>
+      </div>          {/* Data Providers Used */}
+          {result.dataProvider && (
+            <Card className="border-dark-700/50">
+              <CardContent className="p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <div className="flex items-center justify-center w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-600/20 to-green-500/20 border border-emerald-500/20">
+                    <Wifi className="w-5 h-5 text-emerald-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-white">Data Providers Used</h3>
+                  </div>
+                </div>
 
-      {/* Source Channel Info */}
+                {/* Provider badges */}
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {result.dataProvider.used.map((p) => (
+                    <Badge key={p} variant={p === "manual" ? "outline" : "secondary"} className="text-xs">
+                      {p === "youtube-api" ? "🎬 YouTube API" : p === "oembed" ? "🔗 oEmbed" : p === "rss" ? "📡 RSS" : p === "ytdlp" ? "⚡ yt-dlp" : "🏠 Manual"}
+                    </Badge>
+                  ))}
+                  {result.dataProvider.noKeyMode && (
+                    <Badge variant="outline" className="text-xs border-amber-500/30 text-amber-400">
+                      <Key className="w-3 h-3 mr-1" />
+                      No-Key Mode
+                    </Badge>
+                  )}
+                  {result.dataProvider.exactStatsAvailable && (
+                    <Badge variant="success" className="text-xs">
+                      Exact Stats Available
+                    </Badge>
+                  )}
+                  {result.dataProvider.cookiesEnabled && (
+                    <Badge variant="outline" className="text-xs border-orange-500/30 text-orange-400">
+                      <Cookie className="w-3 h-3 mr-1" />
+                      Cookie access: local-only
+                    </Badge>
+                  )}
+                </div>
+
+                {/* Warnings */}
+                {result.dataProvider.warnings.length > 0 && (
+                  <div className="space-y-2">
+                    {result.dataProvider.warnings.map((w, i) => (
+                      <div key={i} className="flex items-start gap-2 p-2 rounded-lg bg-dark-800/30">
+                        <AlertTriangle className="w-4 h-4 text-amber-400 mt-0.5 flex-shrink-0" />
+                        <span className="text-xs text-muted-foreground">{w}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Source Channel Info */}
       <Card className="border-dark-700/50">
         <CardContent className="p-6">
           <div className="flex items-center justify-between mb-4">

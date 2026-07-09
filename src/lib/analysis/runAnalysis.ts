@@ -1,7 +1,13 @@
 // Local analysis orchestrator — runs the full research pipeline deterministically
-// No YouTube API required; heuristic-based analysis from user input
+// Now uses optional YouTube provider layer for enriched metadata
+// Falls back to heuristic analysis when providers are unavailable
 
-import type { AnalysisRequest, AnalysisResult, Recommendation } from "./types";
+import type {
+  AnalysisRequest,
+  AnalysisResult,
+  Recommendation,
+  DataProviderInfo,
+} from "./types";
 import { classifyPyramidLevel } from "./pyramid";
 import { scoreBarriers } from "./barriers";
 import { detectMarketStage } from "./saturation";
@@ -9,13 +15,16 @@ import { scoreBlueOceanGap } from "./blueOcean";
 import { calculateWeightedOpportunityScore } from "./opportunityScore";
 import { extractScriptDNA } from "./scriptDNA";
 import { generateNicheBends } from "./nicheBending";
+import { parseYouTubeInput } from "../youtube/parseYouTubeInput";
+import { resolveChannel, resolveKeyword } from "../providers/providerRouter";
+import { getLocalRuntimeConfig } from "../config/localRuntimeConfig";
 
 // ─── Helper: Deterministic hash-based pseudo-random ──────────
 function hashSeed(str: string): number {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
     hash = ((hash << 5) - hash) + str.charCodeAt(i);
-    hash |= 0; // Convert to 32bit integer
+    hash |= 0;
   }
   return Math.abs(hash);
 }
@@ -27,24 +36,113 @@ function pick<T>(arr: T[], seed: number, index: number = 0): T {
 // ─── Category / Format detection (deterministic from string signals) ──
 
 const CATEGORIES: string[] = [
-  "Finance & Business", "Tech & Software", "Health & Fitness",
-  "Education & Science", "True Crime", "DIY & How-To",
-  "Beauty & Fashion", "Lifestyle & Vlogs",
+  "Finance & Business",
+  "Tech & Software",
+  "Health & Fitness",
+  "Education & Science",
+  "True Crime",
+  "DIY & How-To",
+  "Beauty & Fashion",
+  "Lifestyle & Vlogs",
 ];
 
 const CATEGORY_KEYWORDS: Record<string, string[]> = {
-  "Finance & Business": ["finance", "business", "money", "invest", "crypto", "stock", "wealth", "side hustle", "entrepreneur"],
-  "Tech & Software": ["tech", "software", "ai", "programming", "code", "saas", "cyber", "gadget", "digital"],
-  "Health & Fitness": ["health", "fitness", "weight", "nutrition", "workout", "mental health", "wellness", "sleep"],
-  "Education & Science": ["education", "science", "history", "psychology", "physics", "space", "philosophy", "learn"],
-  "True Crime": ["true crime", "crime", "mystery", "serial killer", "unsolved", "scam", "fraud"],
-  "DIY & How-To": ["diy", "how to", "tutorial", "craft", "woodworking", "garden", "cooking", "repair"],
-  "Beauty & Fashion": ["beauty", "fashion", "skincare", "makeup", "style", "hair", "nails"],
-  "Lifestyle & Vlogs": ["lifestyle", "travel", "minimalism", "productivity", "relationship", "food", "home"],
+  "Finance & Business": [
+    "finance",
+    "business",
+    "money",
+    "invest",
+    "crypto",
+    "stock",
+    "wealth",
+    "side hustle",
+    "entrepreneur",
+  ],
+  "Tech & Software": [
+    "tech",
+    "software",
+    "ai",
+    "programming",
+    "code",
+    "saas",
+    "cyber",
+    "gadget",
+    "digital",
+  ],
+  "Health & Fitness": [
+    "health",
+    "fitness",
+    "weight",
+    "nutrition",
+    "workout",
+    "mental health",
+    "wellness",
+    "sleep",
+  ],
+  "Education & Science": [
+    "education",
+    "science",
+    "history",
+    "psychology",
+    "physics",
+    "space",
+    "philosophy",
+    "learn",
+  ],
+  "True Crime": [
+    "true crime",
+    "crime",
+    "mystery",
+    "serial killer",
+    "unsolved",
+    "scam",
+    "fraud",
+  ],
+  "DIY & How-To": [
+    "diy",
+    "how to",
+    "tutorial",
+    "craft",
+    "woodworking",
+    "garden",
+    "cooking",
+    "repair",
+  ],
+  "Beauty & Fashion": [
+    "beauty",
+    "fashion",
+    "skincare",
+    "makeup",
+    "style",
+    "hair",
+    "nails",
+  ],
+  "Lifestyle & Vlogs": [
+    "lifestyle",
+    "travel",
+    "minimalism",
+    "productivity",
+    "relationship",
+    "food",
+    "home",
+  ],
 };
 
-const FORMATS = ["explainer", "storytelling", "list", "comparison", "documentary", "tutorial"] as const;
-const PRODUCTION_TYPES = ["ai-slideshow", "2d-animation", "stock-footage", "voiceover-only", "screen-record"] as const;
+const FORMATS = [
+  "explainer",
+  "storytelling",
+  "list",
+  "comparison",
+  "documentary",
+  "tutorial",
+] as const;
+const PRODUCTION_TYPES = [
+  "ai-slideshow",
+  "2d-animation",
+  "stock-footage",
+  "voiceover-only",
+  "screen-record",
+] as const;
 
 function detectCategoryFromInput(text: string): string {
   const lower = text.toLowerCase();
@@ -52,7 +150,10 @@ function detectCategoryFromInput(text: string): string {
   let bestScore = 0;
   for (const cat of CATEGORIES) {
     const keywords = CATEGORY_KEYWORDS[cat] || [];
-    const score = keywords.reduce((s, kw) => lower.includes(kw) ? s + kw.length : s, 0);
+    const score = keywords.reduce(
+      (s, kw) => (lower.includes(kw) ? s + kw.length : s),
+      0
+    );
     if (score > bestScore) {
       bestScore = score;
       bestCat = cat;
@@ -63,11 +164,27 @@ function detectCategoryFromInput(text: string): string {
 
 function detectFormatFromInput(text: string): string {
   const lower = text.toLowerCase();
-  if (lower.includes("explain") || lower.includes("how") || lower.includes("why")) return "explainer";
-  if (lower.includes("story") || lower.includes("history") || lower.includes("document")) return "storytelling";
-  if (lower.includes("top") || lower.includes("best") || lower.includes("list")) return "list";
+  if (lower.includes("explain") || lower.includes("how") || lower.includes("why"))
+    return "explainer";
+  if (
+    lower.includes("story") ||
+    lower.includes("history") ||
+    lower.includes("document")
+  )
+    return "storytelling";
+  if (
+    lower.includes("top") ||
+    lower.includes("best") ||
+    lower.includes("list")
+  )
+    return "list";
   if (lower.includes("compar") || lower.includes("vs")) return "comparison";
-  if (lower.includes("tutorial") || lower.includes("how to") || lower.includes("guide")) return "tutorial";
+  if (
+    lower.includes("tutorial") ||
+    lower.includes("how to") ||
+    lower.includes("guide")
+  )
+    return "tutorial";
   return "explainer";
 }
 
@@ -100,10 +217,8 @@ function inferPublishingSpeed(speedStr: string): number {
   if (lower.includes("weekly")) return 4;
   if (lower.includes("bi") || lower.includes("every two")) return 2;
   if (lower.includes("monthly")) return 1;
-  return 4; // default weekly
+  return 4;
 }
-
-// ─── Deterministic scoring from profile signals ──────────────
 
 function scoreFromProfile(texts: string[], max: number): number {
   const combined = texts.join(" ").trim();
@@ -112,12 +227,60 @@ function scoreFromProfile(texts: string[], max: number): number {
   return Math.min(max, Math.round(max * (0.3 + length / 500)));
 }
 
-// ─── Main orchestrator ────────────────────────────────────────
+// ─── Main orchestrator ───────────────────────────────────────
 
-export async function runLocalAnalysis(request: AnalysisRequest): Promise<AnalysisResult> {
+export async function runLocalAnalysis(
+  request: AnalysisRequest
+): Promise<AnalysisResult> {
   const { mode, input, profile, createdAt } = request;
   const seed = hashSeed(input + createdAt + Object.values(profile).join(""));
   const id = `analysis-${Date.now()}-${seed % 10000}`;
+
+  // ─── Resolve input via provider layer ─────────────────────
+  const config = getLocalRuntimeConfig();
+  const parsed = parseYouTubeInput(input);
+
+  let resolvedName = parsed.displayName;
+  let resolvedDescription = "";
+  let resolvedSubscriberCount: number | undefined;
+  let resolvedViewCount: number | undefined;
+  let resolvedVideoCount: number | undefined;
+  const providerWarnings: string[] = [];
+  const providersUsed: string[] = [];
+
+  if (mode === "channel" && input) {
+    const channelResult = await resolveChannel(input);
+    providersUsed.push(channelResult.provider);
+    providerWarnings.push(...channelResult.warnings);
+    if (channelResult.data) {
+      resolvedName = channelResult.data.title;
+      resolvedDescription = channelResult.data.description || "";
+      resolvedSubscriberCount = channelResult.data.subscriberCount;
+      resolvedViewCount = channelResult.data.viewCount;
+      resolvedVideoCount = channelResult.data.videoCount;
+    }
+  } else if (mode === "keyword" && input) {
+    const keywordResult = await resolveKeyword(input);
+    providersUsed.push(keywordResult.provider);
+    providerWarnings.push(...keywordResult.warnings);
+    if (keywordResult.data) {
+      resolvedName = keywordResult.data.title;
+      resolvedDescription = keywordResult.data.description || "";
+    }
+  } else {
+    providersUsed.push("manual");
+  }
+
+  const dataProvider: DataProviderInfo = {
+    used: [...new Set(providersUsed)],
+    warnings: providerWarnings,
+    noKeyMode: config.noKeyMode,
+    exactStatsAvailable:
+      !config.noKeyMode &&
+      (resolvedSubscriberCount !== undefined ||
+        resolvedViewCount !== undefined),
+    cookiesEnabled: config.enableCookies,
+  };
 
   // Parse profile
   const budget = parseBudget(profile.budget);
@@ -127,14 +290,19 @@ export async function runLocalAnalysis(request: AnalysisRequest): Promise<Analys
   const publishingSpeed = inferPublishingSpeed(profile.publishingSpeed);
 
   // Determine source details from mode
-  const sourceInput = input || interests.join(" ") || profile.interests || "general content creation";
-  const name = mode === "channel"
-    ? (input.replace(/.*\/(@?)/, "") || input)
-    : mode === "video"
-    ? `Video: ${input.substring(0, 40)}`
-    : mode === "keyword"
-    ? input
-    : topics[0] || "Auto Discovery";
+  const sourceInput =
+    input ||
+    interests.join(" ") ||
+    profile.interests ||
+    "general content creation";
+  const name =
+    mode === "channel"
+      ? resolvedName
+      : mode === "video"
+      ? `Video: ${input.substring(0, 40)}`
+      : mode === "keyword"
+      ? input
+      : topics[0] || "Auto Discovery";
 
   const category = detectCategoryFromInput(sourceInput);
   const format = detectFormatFromInput(sourceInput);
@@ -143,9 +311,15 @@ export async function runLocalAnalysis(request: AnalysisRequest): Promise<Analys
   const demandScore = scoreFromProfile([...interests, ...topics], 85) + 15;
   const userFitScore = scoreFromProfile([...interests, ...skills], 80) + 10;
   const formatProofScore = scoreFromProfile([format, ...topics], 75) + 15;
-  const assetPotentialScore = Math.min(100, Math.round(40 + budget / 30 + publishingSpeed * 2));
+  const assetPotentialScore = Math.min(
+    100,
+    Math.round(40 + budget / 30 + publishingSpeed * 2)
+  );
   const freshnessScore = profile.exampleChannels ? 65 : 50;
-  const policyRisk = Math.min(100, Math.round(10 + (budget < 300 ? 30 : budget < 600 ? 15 : 5)));
+  const policyRisk = Math.min(
+    100,
+    Math.round(10 + (budget < 300 ? 30 : budget < 600 ? 15 : 5))
+  );
   const saturationRisk = 30 + (interests.length > 3 ? 15 : 0);
 
   // Pyramid input
@@ -177,14 +351,44 @@ export async function runLocalAnalysis(request: AnalysisRequest): Promise<Analys
   // Saturation
   const saturation = detectMarketStage({
     similarChannels: [
-      { title: "Competitor A", recentViews: 25000 + seed % 50000, topVideoViews: 100000 + seed % 200000, uploadCountLast30Days: 8 + seed % 4, startedPostingDaysAgo: 60 + seed % 120 },
-      { title: "Competitor B", recentViews: 35000 + seed % 40000, topVideoViews: 150000 + seed % 300000, uploadCountLast30Days: 6 + seed % 3, startedPostingDaysAgo: 90 + seed % 90 },
-      { title: "Competitor C", recentViews: 15000 + seed % 60000, topVideoViews: 80000 + seed % 400000, uploadCountLast30Days: 10 + seed % 5, startedPostingDaysAgo: 30 + seed % 150 },
-      { title: "Competitor D", recentViews: 5000 + seed % 30000, topVideoViews: 20000 + seed % 80000, uploadCountLast30Days: 12 + seed % 6, startedPostingDaysAgo: 120 + seed % 180 },
-      { title: "Competitor E", recentViews: 45000 + seed % 55000, topVideoViews: 200000 + seed % 500000, uploadCountLast30Days: 4 + seed % 2, startedPostingDaysAgo: 45 + seed % 30 },
+      {
+        title: "Competitor A",
+        recentViews: 25000 + (seed % 50000),
+        topVideoViews: 100000 + (seed % 200000),
+        uploadCountLast30Days: 8 + (seed % 4),
+        startedPostingDaysAgo: 60 + (seed % 120),
+      },
+      {
+        title: "Competitor B",
+        recentViews: 35000 + (seed % 40000),
+        topVideoViews: 150000 + (seed % 300000),
+        uploadCountLast30Days: 6 + (seed % 3),
+        startedPostingDaysAgo: 90 + (seed % 90),
+      },
+      {
+        title: "Competitor C",
+        recentViews: 15000 + (seed % 60000),
+        topVideoViews: 80000 + (seed % 400000),
+        uploadCountLast30Days: 10 + (seed % 5),
+        startedPostingDaysAgo: 30 + (seed % 150),
+      },
+      {
+        title: "Competitor D",
+        recentViews: 5000 + (seed % 30000),
+        topVideoViews: 20000 + (seed % 80000),
+        uploadCountLast30Days: 12 + (seed % 6),
+        startedPostingDaysAgo: 120 + (seed % 180),
+      },
+      {
+        title: "Competitor E",
+        recentViews: 45000 + (seed % 55000),
+        topVideoViews: 200000 + (seed % 500000),
+        uploadCountLast30Days: 4 + (seed % 2),
+        startedPostingDaysAgo: 45 + (seed % 30),
+      },
     ],
     sourceFormat: format,
-    breakoutVideoAgeDays: 45 + seed % 30,
+    breakoutVideoAgeDays: 45 + (seed % 30),
   });
 
   // Blue ocean
@@ -192,9 +396,15 @@ export async function runLocalAnalysis(request: AnalysisRequest): Promise<Analys
     demandSignals: Math.min(10, Math.round(demandScore / 10)),
     directCompetitors: Math.min(10, Math.round(saturation.saturationScore / 12)),
     competitorQuality: Math.min(10, Math.round(copyability * 0.7)),
-    recentBreakouts: Math.min(10, Math.max(1, Math.round(pyramid.competitionRisk / 15))),
+    recentBreakouts: Math.min(
+      10,
+      Math.max(1, Math.round(pyramid.competitionRisk / 15))
+    ),
     adjacentMarketProof: Math.min(10, Math.round(formatProofScore / 10)),
-    formatMissingScore: Math.min(10, Math.max(1, 11 - Math.round(saturation.saturationScore / 10))),
+    formatMissingScore: Math.min(
+      10,
+      Math.max(1, 11 - Math.round(saturation.saturationScore / 10))
+    ),
   });
 
   // Opportunity score
@@ -213,12 +423,16 @@ export async function runLocalAnalysis(request: AnalysisRequest): Promise<Analys
 
   // Script DNA
   const scriptDNA = extractScriptDNA({
-    title: pick([
-      `Why ${category} Is More Important Than You Think`,
-      `The Truth About ${category} Nobody Talks About`,
-      `How ${category} Actually Works`,
-      `The Rise and Fall of ${category}`,
-    ], seed, 0),
+    title: pick(
+      [
+        `Why ${category} Is More Important Than You Think`,
+        `The Truth About ${category} Nobody Talks About`,
+        `How ${category} Actually Works`,
+        `The Rise and Fall of ${category}`,
+      ],
+      seed,
+      0
+    ),
     description: `Exploring the ${category} niche with ${format} content — designed for faceless creators.`,
     videoFormat: budget > 1000 ? "long" : "shorts",
   });
@@ -244,10 +458,34 @@ export async function runLocalAnalysis(request: AnalysisRequest): Promise<Analys
       ? `🟠 Weak opportunity — consider niche bending before entering ${category}`
       : `🔴 ${category} has high risk — consider a different niche or angle`,
     `Archive format: ${format} | Production type: ${productionType} | Budget: $${budget}/month`,
-    `Pyramid tier: ${pyramid.level === "bottom" ? "Quick entry, short lifespan" : pyramid.level === "middle" ? "Branded content, sustainable" : "High moat, long-term asset"}`,
-    `Saturation: ${saturation.stage === "breakout" ? "Ideal entry window" : saturation.stage === "late_wave" ? "Bend before entering" : saturation.stage === "saturated" ? "Avoid — consider different format" : "Test carefully"}`,
-    `Blue ocean score: ${blueOcean.blueOceanScore}/100 — ${blueOcean.label.replace(/_/g, " ")}`,
-    opportunity.recommendation === "build" ? "First-mover advantage is possible — prioritize speed" : "Monitor competitor landscape before scaling",
+    `Pyramid tier: ${
+      pyramid.level === "bottom"
+        ? "Quick entry, short lifespan"
+        : pyramid.level === "middle"
+        ? "Branded content, sustainable"
+        : "High moat, long-term asset"
+    }`,
+    `Saturation: ${
+      saturation.stage === "breakout"
+        ? "Ideal entry window"
+        : saturation.stage === "late_wave"
+        ? "Bend before entering"
+        : saturation.stage === "saturated"
+        ? "Avoid — consider different format"
+        : "Test carefully"
+    }`,
+    `Blue ocean score: ${blueOcean.blueOceanScore}/100 — ${blueOcean.label.replace(
+      /_/g,
+      " "
+    )}`,
+    opportunity.recommendation === "build"
+      ? "First-mover advantage is possible — prioritize speed"
+      : "Monitor competitor landscape before scaling",
+    ...(dataProvider.noKeyMode
+      ? [
+          `ℹ️ No-Key Mode: ${dataProvider.warnings[0] || "Running without YouTube API key."}`,
+        ]
+      : []),
   ];
 
   // Execution plan
@@ -263,14 +501,25 @@ export async function runLocalAnalysis(request: AnalysisRequest): Promise<Analys
   const risks: string[] = [
     `${category} has ${barriers.totalBarrierScore < 30 ? "low" : barriers.totalBarrierScore < 60 ? "moderate" : "high"} barriers — ${barriers.moatLabel} moat`,
     `Format lifespan: ${pyramid.level === "bottom" ? "2-4 months (short)" : pyramid.level === "middle" ? "6-12 months (moderate)" : "18+ months (long)"}`,
-    ...(policyRisk > 40 ? [`⚠️ Policy risk elevated (${policyRisk}/100) — ensure original content creation`] : []),
-    `Monitor ${saturation.stage === "breakout" ? "growing competition" : "market saturation signals"} in the coming months`,
+    ...(policyRisk > 40
+      ? [
+          `⚠️ Policy risk elevated (${policyRisk}/100) — ensure original content creation`,
+        ]
+      : []),
+    `Monitor ${
+      saturation.stage === "breakout" ? "growing competition" : "market saturation signals"
+    } in the coming months`,
   ];
 
   // Test plan
-  const firstFiveIdeas = nicheBends.length > 0
-    ? nicheBends[0].firstFiveVideoIdeas.map((idea, i) => `Test ${i + 1}: "${idea}"`)
-    : [`Test 1: "Why ${category} Is ${pick(["Dangerous", "Important", "Profitable"], seed)} Than You Think"`];
+  const firstFiveIdeas =
+    nicheBends.length > 0
+      ? nicheBends[0].firstFiveVideoIdeas.map(
+          (idea, i) => `Test ${i + 1}: "${idea}"`
+        )
+      : [
+          `Test 1: "Why ${category} Is ${pick(["Dangerous", "Important", "Profitable"], seed)} Than You Think"`,
+        ];
 
   const testPlan = {
     budget: "$100-$200",
@@ -291,18 +540,22 @@ export async function runLocalAnalysis(request: AnalysisRequest): Promise<Analys
   return {
     id,
     request,
+    dataProvider,
     source: {
       name,
-      url: mode === "channel" ? input : undefined,
-      description: `${format} content in ${category} — faceless niche analysis based on your input`,
-      subscriberCount: undefined,
-      viewCount: undefined,
-      videoCount: undefined,
+      url: mode === "channel" ? (parsed.cleanUrl || input) : undefined,
+      description:
+        resolvedDescription ||
+        `${format} content in ${category} — faceless niche analysis based on your input`,
+      subscriberCount: resolvedSubscriberCount,
+      viewCount: resolvedViewCount,
+      videoCount: resolvedVideoCount,
       monthlyViews: undefined,
       estimatedRevenue: undefined,
       format,
       category,
-      strategy: saturation.action === "enter_now" ? "FORMAT_TREND" : "HYBRID",
+      strategy:
+        saturation.action === "enter_now" ? "FORMAT_TREND" : "HYBRID",
       rpm: "N/A (no YouTube API)",
     },
     scores: {

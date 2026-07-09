@@ -4,7 +4,14 @@ build/
 *.tsbuildinfo
 .env
 .env.local
+.env.*.local
 .DS_Store
 *.log
 coverage/
 .vite/
+
+# Private / Secrets
+private/
+cookies.txt
+*.cookies.txt
+*.cookie
