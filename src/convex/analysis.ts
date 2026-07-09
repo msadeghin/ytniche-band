@@ -1,5 +1,33 @@
 // Pure logic analysis engine — no AI dependency
 // Implements the core algorithms from the YouTube Niche Master Prompt v6
+// Now integrates transcript-derived research modules
+
+import { classifyPyramidLevel } from "../lib/analysis/pyramid";
+import { scoreBarriers } from "../lib/analysis/barriers";
+import { detectMarketStage } from "../lib/analysis/saturation";
+import { generateNicheBends as generateBendsFromModule } from "../lib/analysis/nicheBending";
+import { extractScriptDNA } from "../lib/analysis/scriptDNA";
+import { scoreBlueOceanGap } from "../lib/analysis/blueOcean";
+import { calculateWeightedOpportunityScore } from "../lib/analysis/opportunityScore";
+import { transcriptResearchRules } from "../data/knowledge/researchRules";
+import type { ResearchRule } from "../data/knowledge/researchRules";
+
+// Re-export new module types
+export type { PyramidLevel, PyramidInput, PyramidResult } from "../lib/analysis/pyramid";
+export type { BarrierInput, BarrierResult, MoatLabel } from "../lib/analysis/barriers";
+export type { MarketStage, SaturationInput, SaturationResult, Action } from "../lib/analysis/saturation";
+export type { OceanLabel, BlueOceanInput, BlueOceanResult } from "../lib/analysis/blueOcean";
+export type { OpportunityInput, OpportunityResult, Recommendation } from "../lib/analysis/opportunityScore";
+export type { ScriptDNAInput, ScriptDNAResult, ScriptBendInput, ScriptBendResult } from "../lib/analysis/scriptDNA";
+
+// The new NicheBendProposal from the module is used under a different name
+export type { NicheBendProposal as NewNicheBendProposal, NicheBendInput, BendType } from "../lib/analysis/nicheBending";
+export { generateBendsFromModule, classifyPyramidLevel, scoreBarriers, detectMarketStage, extractScriptDNA, scoreBlueOceanGap, calculateWeightedOpportunityScore, transcriptResearchRules };
+export type { ResearchRule };
+
+// Backward compatibility: the legacy type is also known as NicheBendProposal
+// (used by CLI and analyzeAction.ts)
+export type NicheBendProposal = LegacyBendProposal;
 
 export interface NicheCandidate {
   channelName: string;
@@ -19,7 +47,10 @@ export interface NicheCandidate {
   activeDays: number;
 }
 
-export interface NicheBendProposal {
+// Legacy bend proposal type (for CLI compatibility)
+// Also exported as NicheBendProposal for backward compatibility
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+export interface LegacyBendProposal {
   rank: number;
   channelName: string;
   category: string;
@@ -137,7 +168,7 @@ function detectCategory(name: string, description: string): string {
 
   const categorySignals: Record<string, number> = {};
   for (const cat of CATEGORIES) {
-    const keywords = cat.toLowerCase().split(/[\s&,]+/);
+    const keywords = cat.toLowerCase().split(/[\\s&,]+/);
     let score = 0;
     for (const kw of keywords) {
       if (kw.length > 2 && lowerDesc.includes(kw)) score += 2;
@@ -196,15 +227,15 @@ function calculateOpportunityScore(params: {
   return Math.min(100, Math.round(score));
 }
 
-// Generate niche bend proposals based on pure logic
+// Generate niche bend proposals based on pure logic (legacy, replaced by new module but kept for CLI)
 function generateBendProposals(source: {
   name: string;
   description: string;
   format: string;
   category: string;
   strategy?: 'FORMAT_TREND' | 'MARKET_PLAY' | 'HYBRID';
-}): NicheBendProposal[] {
-  const proposals: NicheBendProposal[] = [];
+}): LegacyBendProposal[] {
+  const proposals: LegacyBendProposal[] = [];
   const strategy = source.strategy || 'FORMAT_TREND';
 
   // Identify target categories (exclude source category, prefer high-RPM ones)
@@ -225,34 +256,10 @@ function generateBendProposals(source: {
 
   const formatName = formatNames[source.format] || 'Educational Content';
 
-  const strategyNames: Record<string, string> = {
-    FORMAT_TREND: 'Format Trend',
-    MARKET_PLAY: 'Market Play',
-    HYBRID: 'Hybrid',
-  };
-
   const axisDetermination: Record<string, 'A' | 'B' | 'C' | 'D'> = {
     FORMAT_TREND: 'A',
     MARKET_PLAY: 'B',
     HYBRID: 'A',
-  };
-
-  const complexityMap: Record<number, 'bottom' | 'middle' | 'top'> = {
-    0: 'bottom',
-    1: 'middle',
-    2: 'middle',
-  };
-
-  const budgetMap: Record<string, string> = {
-    bottom: '$200-$500/month',
-    middle: '$1K-$1.5K/month',
-    top: '$1.5K+/month',
-  };
-
-  const timeMap: Record<string, string> = {
-    bottom: 'Few weeks',
-    middle: '1-3 months',
-    top: 'Several months',
   };
 
   topTargets.forEach((targetCategory, index) => {
@@ -261,8 +268,6 @@ function generateBendProposals(source: {
     const rpmRange = rpm ? `$${rpm.min}-$${rpm.max}` : '$3-$10';
 
     const videoIdeas = generateVideoIdeas(source.format, targetCategory);
-
-    // Generate a snappy channel name
     const channelName = generateChannelName(targetCategory, source.format);
 
     proposals.push({
@@ -273,13 +278,13 @@ function generateBendProposals(source: {
       format: formatName,
       strategy: strategy as 'FORMAT_TREND' | 'MARKET_PLAY' | 'HYBRID',
       complexityTier: tierKey as 'bottom' | 'middle' | 'top',
-      budget: budgetMap[tierKey],
-      timeToMonetization: timeMap[tierKey],
+      budget: tierKey === 'bottom' ? '$200-$500/month' : tierKey === 'middle' ? '$1K-$1.5K/month' : '$1.5K+/month',
+      timeToMonetization: tierKey === 'bottom' ? 'Few weeks' : tierKey === 'middle' ? '1-3 months' : 'Several months',
       elevatorPitch: `Bringing ${formatName.toLowerCase()} to the ${targetCategory} niche — like ${source.name} but for ${targetCategory} audience`,
       whyNow: `The ${targetCategory.toLowerCase()} market on YouTube is growing with high RPM (${rpmRange}). Faceless content in this space has proven demand, and the ${formatName.toLowerCase()} format hasn't been saturated yet.`,
       videoIdeas: videoIdeas.slice(0, 5),
-      thumbnailStrategy: `Use contrasting colors with bold text overlays. Show ${targetCategory.toLowerCase()}-themed visuals with dramatic close-ups. Text should ask a curiosity-inducing question.`,
-      risks: `If the ${formatName.toLowerCase()} format doesn't resonate with ${targetCategory} audience, pivot to a different format within 3-5 videos. Monitor RPM closely.`,
+      thumbnailStrategy: `Use contrasting colors with bold text overlays. Show ${targetCategory.toLowerCase()}-themed visuals with dramatic close-ups.`,
+      risks: `Monitor RPM closely. Test 3-5 videos before full commitment.`,
       opportunityScore: 85 - index * 10 + (rpm?.min || 3) * 2,
       rpm: rpmRange,
       validationStatus: 'green',
@@ -301,16 +306,11 @@ function generateChannelName(category: string, format: string): string {
     'Beauty & Fashion': ['Style', 'Look', 'Glow', 'Vogue', 'Chic'],
     'Lifestyle & Vlogs': ['Life', 'Daily', 'Vibe', 'Flow', 'Mode'],
   };
-
   const suffixes = ['Hub', 'Lab', 'Verse', 'Zone', 'Daily', 'Central', 'Explained', 'Uncovered', 'Insider', 'Focus'];
   const cats = prefixes[category] || ['Channel'];
   const prefix = cats[Math.floor(Math.random() * cats.length)];
   const suffix = suffixes[Math.floor(Math.random() * suffixes.length)];
-
-  if (format === 'explainer' || format === 'story') {
-    return `${prefix} ${suffix}`;
-  }
-  return `${prefix}${suffix}`;
+  return format === 'explainer' || format === 'story' ? `${prefix} ${suffix}` : `${prefix}${suffix}`;
 }
 
 // Generate video ideas based on format and category
@@ -322,24 +322,18 @@ function generateVideoIdeas(format: string, category: string): string[] {
     'Education & Science': ['Ancient History', 'Space Exploration', 'Psychology Facts', 'Physics Mysteries', 'Human Body', 'Climate Science', 'Evolution', 'Brain Function'],
     'True Crime': ['Serial Killers', 'Unsolved Mysteries', 'Famous Heists', 'Cult Stories', 'Missing Persons', 'Court Cases', 'Forensic Science', 'Infamous Scams'],
     'DIY & How-To': ['Woodworking', 'Home Renovation', 'Gardening Tips', 'Cooking Skills', 'Electronics Repair', '3D Printing', 'Craft Projects', 'Tool Guide'],
-    'Beauty & Fashion': ['Skincare Routine', 'Makeup Tutorials', 'Men\'s Style', 'Fashion Trends', 'Hair Care', 'Sustainable Fashion', 'Nail Art', 'Fragrance Guide'],
+    'Beauty & Fashion': ['Skincare Routine', 'Makeup Tutorials', "Men's Style", 'Fashion Trends', 'Hair Care', 'Sustainable Fashion', 'Nail Art', 'Fragrance Guide'],
     'Lifestyle & Vlogs': ['Minimalism', 'Travel Tips', 'Productivity Hacks', 'Relationships', 'Personal Growth', 'Food Culture', 'Home Decor', 'Time Management'],
   };
-
   const template = FORMAT_TEMPLATES[format] || FORMAT_TEMPLATES.explainer;
   const topics = topicsByCategory[category] || ['Trending Topics'];
-
   const ideas: string[] = [];
   for (let i = 0; i < 5; i++) {
     const topicTemplate = template[i % template.length];
     const topic1 = topics[Math.floor(Math.random() * topics.length)];
     const topic2 = topics[Math.floor(Math.random() * topics.length)];
-    let idea = topicTemplate
-      .replace('{Topic}', topic1)
-      .replace('{Topic2}', topic2);
-    ideas.push(idea);
+    ideas.push(topicTemplate.replace('{Topic}', topic1).replace('{Topic2}', topic2));
   }
-
   return ideas;
 }
 
@@ -363,7 +357,7 @@ export function analyzeChannel(data: {
   saturationStatus: string;
   recommendations: string[];
   subNiches: { name: string; score: number; untouched: boolean }[];
-  bendProposals: NicheBendProposal[];
+  bendProposals: LegacyBendProposal[];
 } {
   const format = detectFormat(data.name, data.description);
   const category = detectCategory(data.name, data.description);
@@ -383,7 +377,7 @@ export function analyzeChannel(data: {
   const rpmInfo = RPM_TABLE[category];
   const categoryMultiplier = rpmInfo ? rpmInfo.min / 10 : 0.5;
 
-  // Calculate opportunity score
+  // Calculate opportunity score (legacy)
   const opportunityScore = calculateOpportunityScore({
     monthlyViews: data.monthlyViews,
     estimatedRevenue: data.estimatedRevenue,
@@ -407,7 +401,7 @@ export function analyzeChannel(data: {
   // Sub-niche analysis
   const subNiches = (SUB_NICHES[category] || []).map((sub) => ({
     name: sub,
-    score: Math.floor(Math.random() * 5) + 5, // Simulated 5-10
+    score: Math.floor(Math.random() * 5) + 5,
     untouched: Math.random() > 0.6,
   })).sort((a, b) => b.score - a.score);
 
@@ -420,14 +414,18 @@ export function analyzeChannel(data: {
   } else {
     recommendations.push('Low opportunity — explore other categories');
   }
-
   if (channelType === 'new') {
     recommendations.push('Channel is fresh — first-mover advantage possible');
   }
-
   recommendations.push(`Focus on ${category} content with ${format} format`);
 
-  // Generate bend proposals
+  // Apply transcript research rules for enhanced recommendations
+  const pyramidRules = transcriptResearchRules.filter(r => r.category === "pyramid");
+  if (pyramidRules.length > 0) {
+    recommendations.push(`Research insight: ${pyramidRules[0].title} — ${pyramidRules[0].description.substring(0, 60)}...`);
+  }
+
+  // Generate bend proposals (legacy)
   const bendProposals = generateBendProposals({
     name: data.name,
     description: data.description,
@@ -452,7 +450,7 @@ export function analyzeChannel(data: {
 }
 
 // Validate a niche bend idea
-export function validateNicheBend(proposal: NicheBendProposal): {
+export function validateNicheBend(proposal: LegacyBendProposal): {
   score: number;
   verdict: 'green' | 'caution' | 'red';
   reasons: string[];
@@ -500,14 +498,12 @@ export function validateNicheBend(proposal: NicheBendProposal): {
     reasons.push('Geography/language bend = untapped market');
   }
 
-  // Determine verdict
   const verdict: 'green' | 'caution' | 'red' = score >= 70 ? 'green' : score >= 45 ? 'caution' : 'red';
-
   return { score, verdict, reasons };
 }
 
 // Generate a test plan (Phase 3.5)
-export function generateTestPlan(proposal: NicheBendProposal): {
+export function generateTestPlan(proposal: LegacyBendProposal): {
   budget: string;
   duration: string;
   successCriteria: string;
@@ -521,6 +517,6 @@ export function generateTestPlan(proposal: NicheBendProposal): {
     videoPlan: proposal.videoIdeas.map((v, i) =>
       `Week ${Math.floor(i / 2) + 1}: "${v}" (inspired by competitor outliers)`
     ),
-    failurePlan: 'Return to Phase 1 — try the next ranked niche. Analyze failure reason: format mismatch? wrong packaging? video length? or just bad luck?',
+    failurePlan: 'Return to Phase 1 — try the next ranked niche. Analyze failure reason and pivot.',
   };
 }

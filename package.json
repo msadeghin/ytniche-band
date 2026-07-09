@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "analyze": "bun run src/cli.ts",
+    "ingest:transcripts": "bun run tools/ingest-transcripts.ts",
     "dev": "vite",
     "build": "tsc -b --noEmit && vite build"
   },

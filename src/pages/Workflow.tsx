@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Youtube, Search, Link2, Hash, ArrowRight, Loader2,
-  Sparkles, Globe, Zap, AlertCircle
+  Sparkles, Globe, Zap, AlertCircle, Brain, Target,
+  DollarSign, Heart, Lightbulb, Trophy, Pen, User,
+  Play, Eye, BarChart3
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -49,11 +51,39 @@ const modes = [
   },
 ];
 
+interface UserProfile {
+  topics: string;
+  interests: string;
+  skills: string;
+  budget: string;
+  preferredFormat: string;
+  productionStyle: string;
+  language: string;
+  goal: string;
+  publishingSpeed: string;
+  exampleChannels: string;
+}
+
+const initialProfile: UserProfile = {
+  topics: '',
+  interests: '',
+  skills: '',
+  budget: '',
+  preferredFormat: '',
+  productionStyle: '',
+  language: '',
+  goal: '',
+  publishingSpeed: '',
+  exampleChannels: '',
+};
+
 export function Workflow() {
   const navigate = useNavigate();
   const [selectedMode, setSelectedMode] = useState<'auto' | 'channel' | 'video' | 'keyword' | null>(null);
   const [inputValue, setInputValue] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [profile, setProfile] = useState<UserProfile>(initialProfile);
 
   const handleStartAnalysis = async () => {
     if (!selectedMode) return;
@@ -62,7 +92,6 @@ export function Workflow() {
     // Simulate analysis — in production this calls the Convex action
     setTimeout(() => {
       setIsAnalyzing(false);
-      // Navigate to results (mock ID for now)
       navigate(`/results/demo-${Date.now()}`);
     }, 2000);
   };
@@ -76,6 +105,23 @@ export function Workflow() {
     }
   };
 
+  const updateProfile = (field: keyof UserProfile, value: string) => {
+    setProfile(prev => ({ ...prev, [field]: value }));
+  };
+
+  const profileFields: { key: keyof UserProfile; label: string; icon: typeof Brain; placeholder: string }[] = [
+    { key: 'topics', label: 'Topics You Can Talk About for Hours', icon: Brain, placeholder: 'e.g., History, AI, fitness, investing' },
+    { key: 'interests', label: 'Your Interests', icon: Heart, placeholder: 'e.g., Technology, psychology, space' },
+    { key: 'skills', label: 'Skills & Background', icon: Trophy, placeholder: 'e.g., Animation, writing, coding, finance' },
+    { key: 'budget', label: 'Monthly Budget for Content', icon: DollarSign, placeholder: 'e.g., $200, $500, $1000' },
+    { key: 'preferredFormat', label: 'Preferred Format', icon: Play, placeholder: 'Shorts, Long-form, Both' },
+    { key: 'productionStyle', label: 'Production Style', icon: Pen, placeholder: 'e.g., AI slideshow, animation, voiceover' },
+    { key: 'language', label: 'Preferred Language / Market', icon: Globe, placeholder: 'e.g., English, Spanish, Persian' },
+    { key: 'goal', label: 'Your Goal', icon: Target, placeholder: 'e.g., Cashflow, Asset resale, Portfolio, Learning' },
+    { key: 'publishingSpeed', label: 'Publishing Speed', icon: BarChart3, placeholder: 'e.g., Daily, 3x/week, Weekly, Bi-weekly' },
+    { key: 'exampleChannels', label: 'Example Channels You Like', icon: Eye, placeholder: 'e.g., @channel1, @channel2 (comma separated)' },
+  ];
+
   return (
     <div className="min-h-screen py-20">
       <div className="mx-auto max-w-4xl px-4 sm:px-6 lg:px-8">
@@ -87,14 +133,14 @@ export function Workflow() {
         >
           <Badge variant="outline" className="px-4 py-2 text-sm border-red-500/30 text-red-400 bg-red-500/5 mb-4">
             <Zap className="w-4 h-4 mr-2" />
-            6-Phase Analysis
+            6-Phase Analysis + Transcript Engine
           </Badge>
           <h1 className="text-4xl sm:text-5xl font-bold text-white">
             Start{' '}
             <span className="text-gradient">Niche Analysis</span>
           </h1>
           <p className="mt-4 text-lg text-muted-foreground">
-            Choose your starting point and we'll guide you through all 6 phases
+            Choose your starting point and we'll guide you through all 6 phases with our transcript-based research engine
           </p>
         </motion.div>
 
@@ -196,7 +242,7 @@ export function Workflow() {
                   variant="gradient"
                   size="lg"
                   disabled={isAnalyzing}
-                  onClick={handleStartAnalysis}
+                  onClick={() => setShowProfile(true)}
                 >
                   {isAnalyzing ? (
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -209,6 +255,47 @@ export function Workflow() {
             </Card>
           </motion.div>
         )}
+
+        {/* User Profile Section */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={showProfile || selectedMode ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
+          className="mb-8"
+        >
+          <button
+            onClick={() => setShowProfile(!showProfile)}
+            className="w-full text-left mb-4"
+          >
+            <Card className={`border ${showProfile ? 'border-amber-500/30' : 'border-dark-700/50'} bg-dark-900/30 hover:bg-dark-800/30 transition-all`}>
+              <CardContent className="p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <User className="w-5 h-5 text-amber-400" />
+                  <span className="text-sm font-medium text-white">Your Creator Profile (Optional — improves recommendations)</span>
+                </div>
+                <Badge variant="outline" className="text-xs">{showProfile ? 'Hide' : 'Fill In'}</Badge>
+              </CardContent>
+            </Card>
+          </button>
+
+          {showProfile && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {profileFields.map((field) => (
+                <div key={field.key}>
+                  <label className="block text-xs font-medium text-muted-foreground mb-2 flex items-center gap-2">
+                    <field.icon className="w-3.5 h-3.5 text-amber-400/70" />
+                    {field.label}
+                  </label>
+                  <Input
+                    placeholder={field.placeholder}
+                    value={profile[field.key]}
+                    onChange={(e) => updateProfile(field.key, e.target.value)}
+                    className="text-sm"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </motion.div>
 
         {/* Quick tips */}
         <motion.div
@@ -225,7 +312,8 @@ export function Workflow() {
                   <h4 className="text-sm font-semibold text-white mb-1">Quick Tips</h4>
                   <ul className="text-sm text-muted-foreground space-y-1">
                     <li>• For best results, use "Channel" mode with a successful faceless channel URL</li>
-                    <li>• Make sure your YouTube API key is set in Convex (see docs)</li>
+                    <li>• Fill in your Creator Profile for personalized niche bending recommendations</li>
+                    <li>• Our transcript-derived research engine provides rule-based analysis without AI costs</li>
                     <li>• Analysis takes ~30 seconds to complete all 6 phases</li>
                   </ul>
                 </div>
