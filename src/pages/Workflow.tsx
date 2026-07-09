@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
@@ -6,7 +6,7 @@ import {
   Sparkles, Globe, Zap, AlertCircle, Brain, Target,
   DollarSign, Heart, Lightbulb, Trophy, Pen, User,
   Play, Eye, BarChart3, ExternalLink, Shield,
-  Key, Wifi, Cookie
+  Key, Wifi, Cookie, Upload
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -16,6 +16,8 @@ import { runLocalAnalysis } from '@/lib/analysis/runAnalysis';
 import { saveAnalysis } from '@/lib/storage/analysisStore';
 import { getLocalRuntimeConfig } from '@/lib/config/localRuntimeConfig';
 import type { AnalysisMode } from '@/lib/analysis/types';
+
+const LOCAL_SERVER = "http://localhost:8787";
 
 const modes = [
   {
@@ -90,6 +92,21 @@ export function Workflow() {
   const [error, setError] = useState<string | null>(null);
   const [showProfile, setShowProfile] = useState(false);
   const [profile, setProfile] = useState<CreatorProfileState>(initialProfile);
+  const [cookieModal, setCookieModal] = useState<{ show: boolean; message: string }>({ show: false, message: "" });
+  const [serverOnline, setServerOnline] = useState<boolean | null>(null);
+
+  // Check local server status
+  useEffect(() => {
+    const checkServer = async () => {
+      try {
+        const res = await fetch(`${LOCAL_SERVER}/api/health`, { signal: AbortSignal.timeout(2000) });
+        setServerOnline(res.ok);
+      } catch {
+        setServerOnline(false);
+      }
+    };
+    checkServer();
+  }, []);
 
   const handleStartAnalysis = async () => {
     if (!selectedMode) return;
@@ -106,6 +123,35 @@ export function Workflow() {
 
     setError(null);
     setIsAnalyzing(true);
+
+    setError(null);
+    setIsAnalyzing(true);
+
+    // For channel/video URLs, check if local server has cookies
+    const isYouTubeUrl =
+      (selectedMode === "channel" || selectedMode === "video") &&
+      (inputValue.trim().includes("youtube.com") || inputValue.trim().includes("youtu.be") || inputValue.trim().startsWith("@"));
+
+    if (isYouTubeUrl && serverOnline) {
+      try {
+        const cookieRes = await fetch(`${LOCAL_SERVER}/api/cookies/status`, {
+          signal: AbortSignal.timeout(3000),
+        });
+        if (cookieRes.ok) {
+          const cookieData = await cookieRes.json();
+          if (!cookieData.configured) {
+            // Show cookie modal instead of blocking entirely
+            setCookieModal({
+              show: true,
+              message: "For real YouTube metadata, upload cookies.txt. Click 'Upload Cookies' or continue with heuristic analysis.",
+            });
+            // Still proceed with heuristic
+          }
+        }
+      } catch {
+        // Server not responding — proceed with heuristic
+      }
+    }
 
     try {
       const result = await runLocalAnalysis({
@@ -201,6 +247,66 @@ export function Workflow() {
                 </button>
               </CardContent>
             </Card>
+          </motion.div>
+        )}
+
+        {/* Cookie Modal */}
+        {cookieModal.show && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6"
+          >
+            <Card className="border-orange-500/30 bg-orange-500/5">
+              <CardContent className="p-5">
+                <div className="flex items-start gap-3">
+                  <Cookie className="w-6 h-6 text-orange-400 mt-0.5 flex-shrink-0" />
+                  <div className="flex-1">
+                    <h4 className="text-sm font-semibold text-white mb-1">🍪 Cookies Not Configured</h4>
+                    <p className="text-sm text-orange-300/80 mb-3">{cookieModal.message}</p>
+                    <div className="flex gap-2 flex-wrap">
+                      <Link to="/cookie-setup">
+                        <Button variant="gradient" size="sm">
+                          <Upload className="w-3 h-3 mr-1" />
+                          Upload Cookies
+                        </Button>
+                      </Link>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setCookieModal({ show: false, message: "" })}
+                        className="text-muted-foreground"
+                      >
+                        Dismiss — Use Heuristic
+                      </Button>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+
+        {/* Cookie Setup Banner (when server online + cookies missing) */}
+        {serverOnline === true && runtimeConfig.noKeyMode && (
+          <motion.div
+            initial={{ opacity: 0, y: -5 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-4"
+          >
+            <Link to="/cookie-setup">
+              <Card className="border-amber-500/20 bg-amber-500/5 hover:bg-amber-500/10 transition-all cursor-pointer">
+                <CardContent className="p-3 flex items-center gap-3">
+                  <Cookie className="w-5 h-5 text-amber-400 flex-shrink-0" />
+                  <p className="text-xs text-amber-300/80 flex-1">
+                    Cookies not configured — upload cookies.txt for real YouTube metadata
+                  </p>
+                  <Badge variant="outline" className="text-[10px] border-amber-500/30 text-amber-400">
+                    Setup Cookies
+                  </Badge>
+                </CardContent>
+              </Card>
+            </Link>
           </motion.div>
         )}
 

@@ -80,32 +80,49 @@ ytniche-band/
 
 ### Prerequisites
 - **Bun** v1.0+ (for running the project)
-- **YouTube Data API v3 Key** (free from Google Cloud Console — optional)
+- **yt-dlp** (optional — for real YouTube metadata)
 
-### Setup
+### Setup & Run (Two Terminals)
 
+**Terminal 1 — Frontend:**
 ```bash
-# Install dependencies
 bun install
-
-# Start dev server
 bun run dev
+# → http://localhost:3000
+```
 
-# Or for CLI analysis tool
+**Terminal 2 — Local Backend Server:**
+```bash
+bun run dev:server
+# → http://localhost:8787
+# Handles cookie upload, yt-dlp metadata, local analysis
+```
+
+Or run both in one terminal:
+```bash
+bun run dev:all
+```
+
+### Cookie Setup (First Time Only)
+
+For **real YouTube metadata** (titles, views, subscriber counts), you need cookies:
+
+1. Open `http://localhost:3000/cookie-setup`
+2. Export cookies from your browser (use a "Get cookies.txt" extension)
+3. Upload the `cookies.txt` file
+4. Start analyzing YouTube URLs
+
+> **No cookies?** The app works fully in heuristic mode. Analysis runs with generated data based on your input. Cookies only add exact YouTube stats.
+
+### CLI Analysis
+```bash
 bun run analyze
 ```
 
-### Adding a YouTube API Key (Optional but Recommended)
-
+### Adding a YouTube API Key (Alternative to Cookies)
 ```bash
-# Environment variable (local dev)
 echo "YOUTUBE_API_KEY=your_key_here" > .env
-
-# Or via Convex (if using backend)
-bunx convex env set YOUTUBE_API_KEY your_key_here
 ```
-
-> **No-Key Mode:** The app works fully without an API key. Analysis runs with heuristic data and local providers. The YouTube API only adds exact stats when available.
 
 ---
 
@@ -118,35 +135,40 @@ YTNiche Band uses multiple data sources with automatic fallback. No single provi
 | Priority | Provider | Key Required | Data Quality | When Used |
 |----------|----------|-------------|-------------|-----------|
 | 1 | **YouTube API** | ✅ | High (exact stats) | Channel/video analysis |
-| 2 | **oEmbed** | ❌ Free | Medium (titles only) | Video metadata |
-| 3 | **RSS Feed** | ❌ Free | Medium (uploads only) | Recent uploads |
-| 4 | **yt-dlp** (CLI only) | ❌ Local | High (local) | CLI analysis |
+| 2 | **yt-dlp (local server)** | ❌ Local | High (local) | Real YouTube metadata with cookies |
+| 3 | **oEmbed** | ❌ Free | Medium (titles only) | Video metadata fallback |
+| 4 | **RSS Feed** | ❌ Free | Medium (uploads only) | Recent uploads |
 | 5 | **Manual** | ❌ Always | Low (heuristic) | Fallback when all others fail |
 
 The provider router automatically falls back through providers until data is found.
 
-### 🔒 Local YouTube Access & Cookies
+### 🍪 Cookie-First Local Analysis Flow
 
-Cookies are **optional** and used **only** for local yt-dlp access to access age-restricted or member-only content.
+```txt
+User opens app → /cookie-setup checks local server →
+  ├─ Cookies exist? → Analyze YouTube URLs → Real metadata via yt-dlp
+  └─ No cookies? → Show banner on Dashboard/Workflow →
+       ├─ Upload cookies → Analyze URLs
+       └─ Skip → Heuristic mode (no real metadata)
+```
 
-> **⚠️ Safety Rules:**
-> - Cookies are **local-only credentials**. Never share, upload, or commit them.
-> - Cookies are **disabled by default**.
-> - Cookie content is **never stored in app state, logs, or displayed in the UI**.
-> - `.gitignore` protects `cookies.txt`, `private/`, and all cookie-related files.
+### 🔒 Cookie Safety Rules
 
-#### Enabling Cookie Access (CLI Only)
+Cookies are **optional** and used **only** for local yt-dlp metadata access.
 
-1. Export cookies from your browser (use a "Get cookies.txt" extension)
-2. Save to `./private/cookies.txt`
-3. Enable in your environment:
-   ```bash
-   export ENABLE_COOKIES=true
-   export YOUTUBE_COOKIES_PATH=./private/cookies.txt
-   export ENABLE_YTDLP=true
-   ```
+> **⚠️ Never:**
+> - Never paste cookie content into chat
+> - Never commit cookies to Git
+> - Never upload cookies to remote servers
+> - Never display cookie content in the UI
+> - Never log cookie content
 
-#### Cookie .gitignore Protection
+> **✅ Always:**
+> - Store cookies only in `private/cookies.txt`
+> - Re-export cookies every 1-2 weeks when they expire
+> - Treat cookies like passwords
+
+### Cookie .gitignore Protection
 
 The following are already protected by `.gitignore`:
 ```gitignore
@@ -158,6 +180,20 @@ cookies.txt
 *.cookies.txt
 *.cookie
 ```
+
+### Local Backend Server
+
+The local server (`server/localServer.ts`) provides:
+
+| Endpoint | Method | Purpose |
+|----------|--------|---------|
+| `/api/health` | GET | Check server + yt-dlp availability |
+| `/api/cookies/status` | GET | Check if cookies.txt exists |
+| `/api/cookies/upload` | POST | Upload cookies.txt file |
+| `/api/ytdlp/metadata` | POST | Get YouTube metadata via yt-dlp |
+| `/api/analyze` | POST | Full analysis with yt-dlp data |
+
+**Cookie content never leaves the local machine.**
 
 ---
 

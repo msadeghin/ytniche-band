@@ -3,7 +3,8 @@ import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import {
   BarChart3, TrendingUp, Search, Youtube, Clock,
-  ArrowRight, Plus, ExternalLink, Brain, Sparkles, Eye
+  ArrowRight, Plus, ExternalLink, Brain, Sparkles, Eye,
+  Cookie, Wifi
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -11,15 +12,38 @@ import { Badge } from '@/components/ui/badge';
 import { listAnalyses } from '@/lib/storage/analysisStore';
 import type { AnalysisResult } from '@/lib/analysis/types';
 
+const LOCAL_SERVER = "http://localhost:8787";
+
 export function Dashboard() {
   const [analyses, setAnalyses] = useState<AnalysisResult[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [serverOnline, setServerOnline] = useState<boolean | null>(null);
+  const [cookiesConfigured, setCookiesConfigured] = useState(false);
 
   useEffect(() => {
     // Load from localStorage
     const saved = listAnalyses();
     setAnalyses(saved);
     setIsLoading(false);
+
+    // Check local server cookie status
+    const checkCookies = async () => {
+      try {
+        const healthRes = await fetch(`${LOCAL_SERVER}/api/health`, {
+          signal: AbortSignal.timeout(2000),
+        });
+        if (healthRes.ok) {
+          setServerOnline(true);
+          const healthData = await healthRes.json();
+          setCookiesConfigured(healthData.cookiesConfigured);
+        } else {
+          setServerOnline(false);
+        }
+      } catch {
+        setServerOnline(false);
+      }
+    };
+    checkCookies();
   }, []);
 
   // Compute stats from saved analyses
@@ -65,6 +89,30 @@ export function Dashboard() {
             </Link>
           </div>
         </motion.div>
+
+        {/* Cookie Banner */}
+        {serverOnline === true && !cookiesConfigured && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6"
+          >
+            <Link to="/cookie-setup">
+              <Card className="border-amber-500/20 bg-amber-500/5 hover:bg-amber-500/10 transition-all cursor-pointer">
+                <CardContent className="p-4 flex items-center gap-3">
+                  <Cookie className="w-5 h-5 text-amber-400 flex-shrink-0" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-amber-300">YouTube cookies not configured</p>
+                    <p className="text-xs text-amber-400/70">Upload cookies.txt for real YouTube metadata</p>
+                  </div>
+                  <Badge variant="outline" className="text-xs border-amber-500/30 text-amber-400 flex-shrink-0">
+                    Setup Cookies
+                  </Badge>
+                </CardContent>
+              </Card>
+            </Link>
+          </motion.div>
+        )}
 
         {/* Stats Grid */}
         <motion.div
@@ -125,6 +173,12 @@ export function Dashboard() {
                               <div className="flex items-center gap-2">
                                 <h3 className="font-semibold text-white">{analysis.source.name}</h3>
                                 <Badge variant="secondary" className="text-[10px]">{analysis.request.mode}</Badge>
+                  {analysis.dataProvider?.used?.includes("ytdlp") && (
+                    <Badge variant="outline" className="text-[10px] border-cyan-500/30 text-cyan-400">yt-dlp</Badge>
+                  )}
+                  {analysis.dataProvider?.exactStatsAvailable && (
+                    <Badge variant="outline" className="text-[10px] border-green-500/30 text-green-400">Exact</Badge>
+                  )}
                                 <Badge variant={analysis.scores.recommendation === "build" ? "success" : analysis.scores.recommendation === "test" ? "warning" : analysis.scores.recommendation === "avoid" ? "destructive" : "info"} className="text-[10px]">
                                   {analysis.scores.recommendation}
                                 </Badge>

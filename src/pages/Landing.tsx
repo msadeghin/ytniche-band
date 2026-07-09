@@ -128,13 +128,11 @@ export function Landing() {
             {/* Connection line */}
             <div className="hidden lg:block absolute top-24 left-0 right-0 h-px bg-gradient-to-r from-transparent via-red-500/30 to-transparent" />
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {[
-                {
-                  phase: '00',
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">              {[
+                { phase: '00',
                   icon: Calendar,
                   title: 'Setup',
-                  desc: 'Register today\'s date and choose your analysis mode — AUTO, Channel, Video, or Keyword.',
+                  desc: 'Register today\'s date, upload cookies.txt (optional), and choose your analysis mode — AUTO, Channel, Video, or Keyword.',
                 },
                 {
                   phase: '01',
