@@ -237,11 +237,25 @@ export function bendScriptSkeleton(input: ScriptBendInput): ScriptBendResult {
   };
 }
 
-// ─── Helper Functions ──────────────────────────────────────────
+// ─── Deterministic Helper Functions ───────────────────────────
+
+/** Deterministic hash-based pick */
+function dPick(arr: string[], seed: number): string {
+  return arr[Math.abs(seed) % arr.length];
+}
+
+function dHash(str: string): number {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = ((h << 5) - h) + str.charCodeAt(i);
+    h |= 0;
+  }
+  return Math.abs(h);
+}
 
 function getRandomVerb(): string {
   const verbs = ["Speak", "Change", "Disappear", "Save Us", "Destroy Everything"];
-  return verbs[Math.floor(Math.random() * verbs.length)];
+  return dPick(verbs, dHash("verb"));
 }
 
 function getAdjacentTopic(topic: string): string {
@@ -263,7 +277,7 @@ function getThumbnailHook(topic: string): string {
     `I Discovered ${topic}`,
     `${topic}: The Truth`,
   ];
-  return hooks[Math.floor(Math.random() * hooks.length)];
+  return dPick(hooks, dHash(topic));
 }
 
 function getThumbnailVisual(niche: string): string {
@@ -295,7 +309,7 @@ function getBoldClaim(topic: string): string {
 
 function getRandomImpact(): string {
   const impacts = ["Dangerous", "Important", "Profitable", "Fragile", "Powerful", "Misunderstood"];
-  return impacts[Math.floor(Math.random() * impacts.length)];
+  return dPick(impacts, dHash("impact"));
 }
 
 function getSurprisingAngle(topic: string): string {
@@ -309,7 +323,7 @@ function getRetentionPattern(niche: string): string {
     "visual variety with data-driven graphics",
     "comparative analysis with surprising results",
   ];
-  return patterns[Math.floor(Math.random() * patterns.length)];
+  return dPick(patterns, dHash(niche));
 }
 
 function getSurprisingElement(niche: string): string {
@@ -319,5 +333,5 @@ function getSurprisingElement(niche: string): string {
     "case study with unexpected outcome",
     "historical comparison that reframes the topic",
   ];
-  return elements[Math.floor(Math.random() * elements.length)];
+  return dPick(elements, dHash(niche + "element"));
 }

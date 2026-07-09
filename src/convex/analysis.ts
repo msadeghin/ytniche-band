@@ -22,7 +22,7 @@ export type { ScriptDNAInput, ScriptDNAResult, ScriptBendInput, ScriptBendResult
 
 // The new NicheBendProposal from the module is used under a different name
 export type { NicheBendProposal as NewNicheBendProposal, NicheBendInput, BendType } from "../lib/analysis/nicheBending";
-export { generateBendsFromModule, classifyPyramidLevel, scoreBarriers, detectMarketStage, extractScriptDNA, scoreBlueOceanGap, calculateWeightedOpportunityScore, transcriptResearchRules };
+export { classifyPyramidLevel, scoreBarriers, detectMarketStage, extractScriptDNA, scoreBlueOceanGap, calculateWeightedOpportunityScore, transcriptResearchRules };
 export type { ResearchRule };
 
 // Backward compatibility: the legacy type is also known as NicheBendProposal
@@ -294,6 +294,21 @@ function generateBendProposals(source: {
   return proposals;
 }
 
+/** Deterministic hash */
+function dHash(s: string): number {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) - h) + s.charCodeAt(i);
+    h |= 0;
+  }
+  return Math.abs(h);
+}
+
+/** Deterministic array pick */
+function dPick<T>(arr: T[], seed: number): T {
+  return arr[seed % arr.length];
+}
+
 // Generate channel name based on category and format
 function generateChannelName(category: string, format: string): string {
   const prefixes: Record<string, string[]> = {
@@ -308,12 +323,13 @@ function generateChannelName(category: string, format: string): string {
   };
   const suffixes = ['Hub', 'Lab', 'Verse', 'Zone', 'Daily', 'Central', 'Explained', 'Uncovered', 'Insider', 'Focus'];
   const cats = prefixes[category] || ['Channel'];
-  const prefix = cats[Math.floor(Math.random() * cats.length)];
-  const suffix = suffixes[Math.floor(Math.random() * suffixes.length)];
+  const seed = dHash(category + format);
+  const prefix = dPick(cats, seed);
+  const suffix = dPick(suffixes, seed + 7);
   return format === 'explainer' || format === 'story' ? `${prefix} ${suffix}` : `${prefix}${suffix}`;
 }
 
-// Generate video ideas based on format and category
+// Generate video ideas based on format and category (deterministic)
 function generateVideoIdeas(format: string, category: string): string[] {
   const topicsByCategory: Record<string, string[]> = {
     'Finance & Business': ['Credit Score Secrets', 'The Stock Market', 'Real Estate Investing', 'Crypto in 2026', 'Side Hustles', 'Retirement Planning', 'Tax Strategies', 'Startup Funding'],
@@ -327,11 +343,12 @@ function generateVideoIdeas(format: string, category: string): string[] {
   };
   const template = FORMAT_TEMPLATES[format] || FORMAT_TEMPLATES.explainer;
   const topics = topicsByCategory[category] || ['Trending Topics'];
+  const seed = dHash(format + category);
   const ideas: string[] = [];
   for (let i = 0; i < 5; i++) {
     const topicTemplate = template[i % template.length];
-    const topic1 = topics[Math.floor(Math.random() * topics.length)];
-    const topic2 = topics[Math.floor(Math.random() * topics.length)];
+    const topic1 = dPick(topics, seed + i);
+    const topic2 = dPick(topics, seed + i + 3);
     ideas.push(topicTemplate.replace('{Topic}', topic1).replace('{Topic2}', topic2));
   }
   return ideas;
@@ -398,11 +415,12 @@ export function analyzeChannel(data: {
     'Growing population' :
     'One of few';
 
-  // Sub-niche analysis
-  const subNiches = (SUB_NICHES[category] || []).map((sub) => ({
+  // Sub-niche analysis (deterministic)
+  const subSeed = dHash(data.name + category);
+  const subNiches = (SUB_NICHES[category] || []).map((sub, i) => ({
     name: sub,
-    score: Math.floor(Math.random() * 5) + 5,
-    untouched: Math.random() > 0.6,
+    score: Math.max(1, Math.min(10, 5 + (subSeed + i) % 5)),
+    untouched: (subSeed + i * 7) % 10 > 6,
   })).sort((a, b) => b.score - a.score);
 
   // Generate recommendations

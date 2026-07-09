@@ -1,16 +1,19 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Youtube, Search, Link2, Hash, ArrowRight, Loader2,
   Sparkles, Globe, Zap, AlertCircle, Brain, Target,
   DollarSign, Heart, Lightbulb, Trophy, Pen, User,
-  Play, Eye, BarChart3
+  Play, Eye, BarChart3, ExternalLink
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { runLocalAnalysis } from '@/lib/analysis/runAnalysis';
+import { saveAnalysis } from '@/lib/storage/analysisStore';
+import type { AnalysisMode } from '@/lib/analysis/types';
 
 const modes = [
   {
@@ -51,7 +54,7 @@ const modes = [
   },
 ];
 
-interface UserProfile {
+interface CreatorProfileState {
   topics: string;
   interests: string;
   skills: string;
@@ -64,7 +67,7 @@ interface UserProfile {
   exampleChannels: string;
 }
 
-const initialProfile: UserProfile = {
+const initialProfile: CreatorProfileState = {
   topics: '',
   interests: '',
   skills: '',
@@ -79,21 +82,45 @@ const initialProfile: UserProfile = {
 
 export function Workflow() {
   const navigate = useNavigate();
-  const [selectedMode, setSelectedMode] = useState<'auto' | 'channel' | 'video' | 'keyword' | null>(null);
+  const [selectedMode, setSelectedMode] = useState<AnalysisMode | null>(null);
   const [inputValue, setInputValue] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [showProfile, setShowProfile] = useState(false);
-  const [profile, setProfile] = useState<UserProfile>(initialProfile);
+  const [profile, setProfile] = useState<CreatorProfileState>(initialProfile);
 
   const handleStartAnalysis = async () => {
     if (!selectedMode) return;
+
+    // Validate input
+    if (selectedMode !== 'auto' && !inputValue.trim()) {
+      setError('Please enter a channel URL, video URL, or keyword to analyze.');
+      return;
+    }
+    if (selectedMode === 'auto' && !profile.topics && !profile.interests && !profile.skills) {
+      // AUTO mode can run with default seed, just warn
+      // proceed anyway
+    }
+
+    setError(null);
     setIsAnalyzing(true);
 
-    // Simulate analysis — in production this calls the Convex action
-    setTimeout(() => {
+    try {
+      const result = await runLocalAnalysis({
+        mode: selectedMode,
+        input: inputValue.trim(),
+        profile,
+        createdAt: new Date().toISOString(),
+      });
+
+      saveAnalysis(result);
+      navigate(`/results/${result.id}`);
+    } catch (err: any) {
+      console.error('Analysis failed:', err);
+      setError(err?.message || 'Analysis failed unexpectedly. Please try again.');
+    } finally {
       setIsAnalyzing(false);
-      navigate(`/results/demo-${Date.now()}`);
-    }, 2000);
+    }
   };
 
   const getPlaceholder = () => {
@@ -105,11 +132,11 @@ export function Workflow() {
     }
   };
 
-  const updateProfile = (field: keyof UserProfile, value: string) => {
+  const updateProfile = (field: keyof CreatorProfileState, value: string) => {
     setProfile(prev => ({ ...prev, [field]: value }));
   };
 
-  const profileFields: { key: keyof UserProfile; label: string; icon: typeof Brain; placeholder: string }[] = [
+  const profileFields: { key: keyof CreatorProfileState; label: string; icon: typeof Brain; placeholder: string }[] = [
     { key: 'topics', label: 'Topics You Can Talk About for Hours', icon: Brain, placeholder: 'e.g., History, AI, fitness, investing' },
     { key: 'interests', label: 'Your Interests', icon: Heart, placeholder: 'e.g., Technology, psychology, space' },
     { key: 'skills', label: 'Skills & Background', icon: Trophy, placeholder: 'e.g., Animation, writing, coding, finance' },
@@ -140,9 +167,31 @@ export function Workflow() {
             <span className="text-gradient">Niche Analysis</span>
           </h1>
           <p className="mt-4 text-lg text-muted-foreground">
-            Choose your starting point and we'll guide you through all 6 phases with our transcript-based research engine
+            Choose your starting point and we'll run the full research pipeline in seconds
           </p>
         </motion.div>
+
+        {/* Error State */}
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6"
+          >
+            <Card className="border-red-500/30 bg-red-500/5">
+              <CardContent className="p-4 flex items-center gap-3">
+                <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0" />
+                <p className="text-sm text-red-300">{error}</p>
+                <button
+                  onClick={() => setError(null)}
+                  className="ml-auto text-xs text-muted-foreground hover:text-white"
+                >
+                  Dismiss
+                </button>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
 
         {/* Mode Selection */}
         <motion.div
@@ -159,6 +208,7 @@ export function Workflow() {
                 onClick={() => {
                   setSelectedMode(mode.id);
                   setInputValue('');
+                  setError(null);
                 }}
                 className={`relative group text-left p-6 rounded-2xl border transition-all duration-300 ${
                   isSelected
@@ -186,7 +236,7 @@ export function Workflow() {
           })}
         </motion.div>
 
-        {/* Input Section */}
+        {/* Input Section (for channel, video, keyword modes) */}
         {selectedMode && selectedMode !== 'auto' && (
           <motion.div
             initial={{ opacity: 0, y: 10 }}
@@ -206,6 +256,7 @@ export function Workflow() {
                     value={inputValue}
                     onChange={(e) => setInputValue(e.target.value)}
                     className="flex-1"
+                    onKeyDown={(e) => e.key === 'Enter' && handleStartAnalysis()}
                   />
                   <Button
                     variant="gradient"
@@ -235,14 +286,17 @@ export function Workflow() {
               <CardContent className="p-8 text-center">
                 <Globe className="w-16 h-16 text-red-400 mx-auto mb-4" />
                 <h3 className="text-xl font-semibold text-white mb-2">Automatic Discovery</h3>
-                <p className="text-muted-foreground mb-6 max-w-md mx-auto">
-                  We'll search across 5+ high-RPM categories to find the best faceless niche opportunities for you.
+                <p className="text-muted-foreground mb-3 max-w-md mx-auto">
+                  We'll analyze your creator profile to find the best faceless niche opportunities for you.
+                </p>
+                <p className="text-xs text-muted-foreground mb-6">
+                  Fill in your profile below or just click Analyze to start with a default seed.
                 </p>
                 <Button
                   variant="gradient"
                   size="lg"
                   disabled={isAnalyzing}
-                  onClick={() => setShowProfile(true)}
+                  onClick={handleStartAnalysis}
                 >
                   {isAnalyzing ? (
                     <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -297,12 +351,12 @@ export function Workflow() {
           )}
         </motion.div>
 
-        {/* Quick tips */}
+        {/* Quick tips + Demo Link */}
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           transition={{ delay: 0.3 }}
-          className="mt-12"
+          className="mt-12 space-y-4"
         >
           <Card className="border-dark-800/50 bg-dark-900/30">
             <CardContent className="p-6">
@@ -314,14 +368,24 @@ export function Workflow() {
                     <li>• For best results, use "Channel" mode with a successful faceless channel URL</li>
                     <li>• Fill in your Creator Profile for personalized niche bending recommendations</li>
                     <li>• Our transcript-derived research engine provides rule-based analysis without AI costs</li>
-                    <li>• Analysis takes ~30 seconds to complete all 6 phases</li>
+                    <li>• Analysis runs locally in your browser — your data stays on your device</li>
+                    <li>• Results are saved to localStorage and shown on the Dashboard</li>
                   </ul>
                 </div>
               </div>
             </CardContent>
           </Card>
+
+          {/* Demo link */}
+          <Link to="/results/demo">
+          <Button variant="outline" size="sm" className="w-full text-muted-foreground">
+            <ExternalLink className="w-4 h-4 mr-2" />
+            View Demo Report (pre-built sample)
+          </Button>
+          </Link>
         </motion.div>
       </div>
     </div>
   );
 }
+
